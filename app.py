@@ -90,12 +90,13 @@ def df_to_pdf_table(df, title="FLASH"):
                 else ("" if pd.isna(x) else str(x))
             )
 
+    # تعديل الـ styles عشان النص يكون من فوق لتحت
     styleN = ParagraphStyle(name='Normal', fontName='Arabic-Bold', fontSize=9,
-                            alignment=1, wordWrap='RTL')
+                            alignment=1, leading=12)  # شلنا wordWrap='RTL'
     styleBH = ParagraphStyle(name='Header', fontName='Arabic-Bold', fontSize=10,
-                             alignment=1, wordWrap='RTL')
+                             alignment=1, leading=14)  # شلنا wordWrap='RTL'
     styleTitle = ParagraphStyle(name='Title', fontName='Arabic-Bold', fontSize=14,
-                                alignment=1, wordWrap='RTL')
+                                alignment=1, leading=18)  # شلنا wordWrap='RTL'
 
     data = []
     data.append([Paragraph(fix_arabic(col), styleBH) for col in df.columns])
@@ -192,10 +193,6 @@ if uploaded_files:
         if 'اسم العميل' in merged_df.columns:
             merged_df['اسم العميل'] = fill_down(merged_df['اسم العميل'])
         
-        # Fill down للملاحظات أيضاً (عشان تظهر في أول سطر)
-        if 'الملاحظات' in merged_df.columns:
-            merged_df['الملاحظات'] = fill_down(merged_df['الملاحظات'])
-        
         # معالجة المدينة للصفوف اللي فيها منتج
         if 'المدينة' in merged_df.columns and 'اسم الصنف' in merged_df.columns:
             prod_present = merged_df['اسم الصنف'].notna() & merged_df['اسم الصنف'].astype(str).str.strip().ne('')
@@ -229,15 +226,15 @@ if uploaded_files:
         )
         merged_df = merged_df.sort_values(['المنطقة','كود الاوردر'])
         
-        # التعديل الجديد: مسح التفاصيل المكررة وترك المنتجات فقط
-        # الأعمدة اللي هنمسحها للصفوف المكررة (كل حاجة إلا الكود والمنطقة وتفاصيل المنتج)
+        # التعديل الجديد: مسح التفاصيل المكررة وترك المنتجات والملاحظات
+        # الأعمدة اللي هنمسحها للصفوف المكررة (بدون الملاحظات!)
         cols_to_clear = ['اسم العميل', 'العنوان', 'المدينة', 'رقم موبايل العميل', 
-                        'حالة الاوردر', 'عدد القطع', 'الملاحظات', 'الإجمالي مع الشحن']
+                        'حالة الاوردر', 'عدد القطع', 'الإجمالي مع الشحن']
         
         # نحدد أول ظهور لكل كود
         merged_df['is_first'] = ~merged_df.duplicated(subset=['كود الاوردر'], keep='first')
         
-        # نمسح البيانات للصفوف المكررة فقط
+        # نمسح البيانات للصفوف المكررة فقط (بدون الملاحظات)
         for col in cols_to_clear:
             if col in merged_df.columns:
                 merged_df.loc[~merged_df['is_first'], col] = ''
