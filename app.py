@@ -2,29 +2,10 @@ import streamlit as st
 import pandas as pd
 import datetime
 import io
-import arabic_reshaper
-from bidi.algorithm import get_display
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfbase import pdfmetrics
+from io import BytesIO
 import pytz
 
 # ---------- Arabic helpers ----------
-def fix_arabic(text):
-    if pd.isna(text):
-        return ""
-    reshaped = arabic_reshaper.reshape(str(text))
-    return get_display(reshaped)
-
-def fill_down(series):
-    return series.ffill()
-
-def replace_muaaqal_with_confirm_safe(df):
-    return df.replace('معلق', 'تم التأكيد')
-
 def classify_city(city):
     if pd.isna(city) or str(city).strip() == '':
         return "Other City"
@@ -72,82 +53,27 @@ def classify_city(city):
             return area
     return "Other City"
 
-# ---------- PDF table builder ----------
-def df_to_pdf_table(df, title="FLASH"):
-    # تنسيق رقم الموبايل فقط
-    if 'رقم موبايل العميل' in df.columns:
-        df['رقم موبايل العميل'] = df['رقم موبايل العميل'].apply(
-            lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit()
-            else ("" if pd.isna(x) else str(x))
-        )
-    
-    # تحويل الأرقام للأعمدة العددية فقط
-    numeric_cols = {'عدد القطع', 'الكمية'}
-    for col in df.columns:
-        if col in numeric_cols:
-            df[col] = df[col].apply(
-                lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit()
-                else ("" if pd.isna(x) else str(x))
-            )
+def replace_muaaqal_with_confirm_safe(df):
+    return df.replace('معلق', 'تم التأكيد')
 
-    # ✅ رجعنا الخط زي الكود القديم
-    styleN = ParagraphStyle(name='Normal', fontName='Arabic-Bold', fontSize=9,
-                            alignment=1, wordWrap='RTL')
-    styleBH = ParagraphStyle(name='Header', fontName='Arabic-Bold', fontSize=10,
-                             alignment=1, wordWrap='RTL')
-    styleTitle = ParagraphStyle(name='Title', fontName='Arabic-Bold', fontSize=14,
-                                alignment=1, wordWrap='RTL')
-
-    data = []
-    data.append([Paragraph(fix_arabic(col), styleBH) for col in df.columns])
-    for _, row in df.iterrows():
-        data.append([Paragraph(fix_arabic("" if pd.isna(row[col]) else str(row[col])), styleN)
-                     for col in df.columns])
-
-    # توزيع عرض الأعمدة
-    col_widths_cm = [2, 2.5, 2, 3, 2, 2.5, 1.5, 1.5, 2.5, 3, 1.5, 1.5, 1, 1.5]
-    col_widths = [max(c * 28.35, 15) for c in col_widths_cm]
-
-    tz = pytz.timezone('Africa/Cairo')
-    today = datetime.datetime.now(tz).strftime("%Y-%m-%d")
-    title_text = f"{title} | FLASH | {today}"
-
-    elements = [
-        Paragraph(fix_arabic(title_text), styleTitle),
-        Spacer(1, 14)
-    ]
-
-    table = Table(data, colWidths=col_widths[:len(df.columns)], repeatRows=1)
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#64B5F6")),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-        ('GRID', (0, 0), (-1, -1), 0.25, colors.black),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-    ]))
-
-    elements.append(table)
-    elements.append(PageBreak())
-    return elements
+def fill_down(series):
+    return series.ffill()
 
 # ---------- Streamlit App ----------
 st.set_page_config(page_title="🔥 Flash Orders Processor", layout="wide")
 st.title("🔥 Flash Orders Processor")
 st.markdown("....ارفع الملفات يا رايق علشان تستلم الشيت")
 
+# ============ الجزء الأول: رفع وتحضير البيانات ============
 uploaded_files = st.file_uploader(
-    "Upload Excel files (.xlsx)",
+    "📤 Upload Excel files (.xlsx)",
     accept_multiple_files=True,
     type=["xlsx"]
 )
 
 if uploaded_files:
-    pdfmetrics.registerFont(TTFont('Arabic', 'Amiri-Regular.ttf'))
-    pdfmetrics.registerFont(TTFont('Arabic-Bold', 'Amiri-Bold.ttf'))
-
     all_frames = []
     for file in uploaded_files:
-        # قراءة كل الأعمدة كنص
         xls = pd.read_excel(file, sheet_name=None, engine="openpyxl", dtype=str)
         for _, df in xls.items():
             df = df.dropna(how="all")
@@ -156,7 +82,6 @@ if uploaded_files:
     if all_frames:
         merged_df = pd.concat(all_frames, ignore_index=True, sort=False)
         
-        # استخدام العمود الحقيقي من الملف
         column_mapping = {
             ' الرقم العشوائي': 'كود الاوردر',
             'الإسم': 'اسم العميل',
@@ -172,29 +97,23 @@ if uploaded_files:
             'Total': 'الإجمالي مع الشحن'
         }
         
-        # إعادة تسمية الأعمدة
         merged_df = merged_df.rename(columns=column_mapping)
         
-        # اختيار الأعمدة المطلوبة فقط
         required_cols = ['كود الاوردر', 'اسم العميل', 'العنوان', 'المدينة', 
                         'رقم موبايل العميل', 'حالة الاوردر', 'الملاحظات', 
                         'اسم الصنف', 'اللون', 'المقاس', 'الكمية', 'الإجمالي مع الشحن']
         
         merged_df = merged_df[[c for c in required_cols if c in merged_df.columns]].copy()
         
-        # استبدال معلق بتم التأكيد
         merged_df = replace_muaaqal_with_confirm_safe(merged_df)
         
-        # Fill down للأعمدة الأساسية (بدون الملاحظات!)
         if 'المدينة' in merged_df.columns:
             merged_df['المدينة'] = merged_df['المدينة'].ffill().fillna('')
         if 'كود الاوردر' in merged_df.columns:
             merged_df['كود الاوردر'] = fill_down(merged_df['كود الاوردر'])
         if 'اسم العميل' in merged_df.columns:
             merged_df['اسم العميل'] = fill_down(merged_df['اسم العميل'])
-        # ✅ شيلنا fill_down للملاحظات عشان تبقى في أول سطر بس!
         
-        # معالجة المدينة للصفوف اللي فيها منتج
         if 'المدينة' in merged_df.columns and 'اسم الصنف' in merged_df.columns:
             prod_present = merged_df['اسم الصنف'].notna() & merged_df['اسم الصنف'].astype(str).str.strip().ne('')
             city_empty = merged_df['المدينة'].isna() | merged_df['المدينة'].astype(str).str.strip().eq('')
@@ -203,23 +122,19 @@ if uploaded_files:
                 city_ffill = merged_df['المدينة'].ffill()
                 merged_df.loc[mask, 'المدينة'] = city_ffill.loc[mask]
         
-        # حساب عدد القطع (مجموع الكمية لكل أوردر)
         if 'كود الاوردر' in merged_df.columns and 'الكمية' in merged_df.columns:
             merged_df['الكمية'] = pd.to_numeric(merged_df['الكمية'], errors='coerce').fillna(0)
             order_total_qty = merged_df.groupby('كود الاوردر')['الكمية'].transform('sum')
             merged_df.insert(7, 'عدد القطع', order_total_qty)
         
-        # تصنيف المنطقة من المدينة
         merged_df['المنطقة'] = merged_df['المدينة'].apply(classify_city)
         
-        # إعادة ترتيب الأعمدة النهائي
         final_order = ['كود الاوردر', 'اسم العميل', 'المنطقة', 'العنوان', 'المدينة',
                       'رقم موبايل العميل', 'حالة الاوردر', 'عدد القطع', 'الملاحظات',
                       'اسم الصنف', 'اللون', 'المقاس', 'الكمية', 'الإجمالي مع الشحن']
         
         merged_df = merged_df[[c for c in final_order if c in merged_df.columns]].copy()
         
-        # ترتيب حسب المنطقة والكود أولاً
         merged_df['المنطقة'] = pd.Categorical(
             merged_df['المنطقة'],
             categories=[c for c in merged_df['المنطقة'].unique() if c != "Other City"] + ["Other City"],
@@ -227,42 +142,85 @@ if uploaded_files:
         )
         merged_df = merged_df.sort_values(['المنطقة','كود الاوردر'])
         
-        # ✅ مسح التفاصيل المكررة + الملاحظات بعد السطر الأول
         cols_to_clear = ['اسم العميل', 'العنوان', 'المدينة', 'رقم موبايل العميل', 
                         'حالة الاوردر', 'عدد القطع', 'الملاحظات', 'الإجمالي مع الشحن']
         
-        # نحدد أول ظهور لكل كود
         merged_df['is_first'] = ~merged_df.duplicated(subset=['كود الاوردر'], keep='first')
         
-        # ✅ نمسح البيانات للصفوف المكررة (بما فيها الملاحظات!)
         for col in cols_to_clear:
             if col in merged_df.columns:
                 merged_df.loc[~merged_df['is_first'], col] = ''
         
-        # نشيل العمود المساعد
         merged_df = merged_df.drop(columns=['is_first'])
         
-        # إنشاء PDF
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(
-            buffer,
-            pagesize=landscape(A4),
-            leftMargin=15, rightMargin=15, topMargin=15, bottomMargin=15
-        )
-        elements = []
-        for group_name, group_df in merged_df.groupby('المنطقة'):
-            elements.extend(df_to_pdf_table(group_df.copy(), title=str(group_name)))
-        doc.build(elements)
-        buffer.seek(0)
+        # ============ الجزء الأول: تحميل الشيت للتعديل ============
+        st.divider()
+        st.subheader("📋 الجزء الأول: البيانات المنظفة (للتعديل)")
+        
+        buffer_clean = BytesIO()
+        merged_df.to_excel(buffer_clean, sheet_name='البيانات المنظفة', index=False, engine='openpyxl')
+        buffer_clean.seek(0)
         
         tz = pytz.timezone('Africa/Cairo')
         today = datetime.datetime.now(tz).strftime("%Y-%m-%d")
-        file_name = f"سواقين فلاش - {today}.pdf"
+        file_name_clean = f"البيانات المنظفة - {today}.xlsx"
         
-        st.success("✅تم تجهيز ملف PDF ✅")
+        st.info("✅ احفظ الملف، عدّل فيه، ورفعه بعدين للخطوة الثانية")
         st.download_button(
-            label="⬇️⬇️ تحميل ملف PDF",
-            data=buffer.getvalue(),
-            file_name=file_name,
-            mime="application/pdf"
+            label="⬇️ تحميل البيانات المنظفة (للتعديل)",
+            data=buffer_clean.getvalue(),
+            file_name=file_name_clean,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_clean"
         )
+        
+        st.dataframe(merged_df.head(20), use_container_width=True)
+        
+        # ============ الجزء الثاني: رفع الملف المعدّل وتقسيم المناطق ============
+        st.divider()
+        st.subheader("🔄 الجزء الثاني: رفع الملف المعدّل وتقسيم المناطق")
+        
+        edited_file = st.file_uploader(
+            "📤 رفع الملف بعد التعديل",
+            type=["xlsx"],
+            key="edited_upload"
+        )
+        
+        if edited_file:
+            # قراءة الملف المعدّل
+            edited_df = pd.read_excel(edited_file, sheet_name='البيانات المنظفة', engine="openpyxl", dtype=str)
+            
+            st.success("✅ تم قراءة الملف المعدّل بنجاح!")
+            
+            # إنشاء ملف Excel بـ sheet للعرض والتعديل الأول + Sheets المناطق
+            buffer_final = BytesIO()
+            
+            with pd.ExcelWriter(buffer_final, engine='openpyxl') as writer:
+                # Sheet 1: البيانات المعدّلة
+                edited_df.to_excel(writer, sheet_name='البيانات المنظفة', index=False)
+                
+                # Sheets 2+: كل منطقة في sheet منفصل
+                # نتأكد إن المنطقة موجودة
+                if 'المنطقة' in edited_df.columns:
+                    for area_name in edited_df['المنطقة'].unique():
+                        if pd.notna(area_name):
+                            area_df = edited_df[edited_df['المنطقة'] == area_name].copy()
+                            # نشيل عمود المنطقة من الشيت المنطقة
+                            area_df = area_df.drop(columns=['المنطقة'])
+                            area_df.to_excel(writer, sheet_name=str(area_name)[:31], index=False)
+            
+            buffer_final.seek(0)
+            
+            file_name_final = f"سواقين فلاش - {today}.xlsx"
+            
+            st.success("✅ تم تقسيم البيانات للمناطق بنجاح!")
+            st.download_button(
+                label="⬇️⬇️ تحميل الملف النهائي (البيانات + المناطق)",
+                data=buffer_final.getvalue(),
+                file_name=file_name_final,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_final"
+            )
+            
+            st.subheader("📊 Preview البيانات المعدّلة")
+            st.dataframe(edited_df.head(20), use_container_width=True)
