@@ -4,8 +4,22 @@ import datetime
 import io
 from io import BytesIO
 import pytz
+import arabic_reshaper
+from bidi.algorithm import get_display
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase import pdfmetrics
 
 # ---------- Arabic helpers ----------
+def fix_arabic(text):
+    if pd.isna(text):
+        return ""
+    reshaped = arabic_reshaper.reshape(str(text))
+    return get_display(reshaped)
+
 def classify_city(city):
     if pd.isna(city) or str(city).strip() == '':
         return "Other City"
@@ -58,6 +72,63 @@ def replace_muaaqal_with_confirm_safe(df):
 
 def fill_down(series):
     return series.ffill()
+
+def df_to_pdf_table(df, title="FLASH"):
+    # تنسيق رقم الموبايل فقط
+    if 'رقم موبايل العميل' in df.columns:
+        df['رقم موبايل العميل'] = df['رقم موبايل العميل'].apply(
+            lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit()
+            else ("" if pd.isna(x) else str(x))
+        )
+    
+    # تحويل الأرقام للأعمدة العددية فقط
+    numeric_cols = {'عدد القطع', 'الكمية'}
+    for col in df.columns:
+        if col in numeric_cols:
+            df[col] = df[col].apply(
+                lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit()
+                else ("" if pd.isna(x) else str(x))
+            )
+
+    # الخط والـ styles
+    styleN = ParagraphStyle(name='Normal', fontName='Arabic-Bold', fontSize=9,
+                            alignment=1, wordWrap='RTL')
+    styleBH = ParagraphStyle(name='Header', fontName='Arabic-Bold', fontSize=10,
+                             alignment=1, wordWrap='RTL')
+    styleTitle = ParagraphStyle(name='Title', fontName='Arabic-Bold', fontSize=14,
+                                alignment=1, wordWrap='RTL')
+
+    data = []
+    data.append([Paragraph(fix_arabic(col), styleBH) for col in df.columns])
+    for _, row in df.iterrows():
+        data.append([Paragraph(fix_arabic("" if pd.isna(row[col]) else str(row[col])), styleN)
+                     for col in df.columns])
+
+    # توزيع عرض الأعمدة
+    col_widths_cm = [2, 2.5, 2, 3, 2, 2.5, 1.5, 1.5, 2.5, 3, 1.5, 1.5, 1, 1.5]
+    col_widths = [max(c * 28.35, 15) for c in col_widths_cm]
+
+    tz = pytz.timezone('Africa/Cairo')
+    today = datetime.datetime.now(tz).strftime("%Y-%m-%d")
+    title_text = f"{title} | FLASH | {today}"
+
+    elements = [
+        Paragraph(fix_arabic(title_text), styleTitle),
+        Spacer(1, 14)
+    ]
+
+    table = Table(data, colWidths=col_widths[:len(df.columns)], repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#64B5F6")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+        ('GRID', (0, 0), (-1, -1), 0.25, colors.black),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+    ]))
+
+    elements.append(table)
+    elements.append(PageBreak())
+    return elements
 
 # ---------- Streamlit App ----------
 st.set_page_config(page_title="🔥 Flash Orders Processor", layout="wide")
@@ -192,34 +263,39 @@ if uploaded_files:
             
             st.success("✅ تم قراءة الملف المعدّل بنجاح!")
             
-            # إنشاء ملف Excel بـ sheet للعرض والتعديل الأول + Sheets المناطق
-            buffer_final = BytesIO()
+            # ✅ إنشاء PDF بـ كل منطقة بـ جداول
+            pdfmetrics.registerFont(TTFont('Arabic', 'Amiri-Regular.ttf'))
+            pdfmetrics.registerFont(TTFont('Arabic-Bold', 'Amiri-Bold.ttf'))
             
-            with pd.ExcelWriter(buffer_final, engine='openpyxl') as writer:
-                # Sheet 1: البيانات المعدّلة
-                edited_df.to_excel(writer, sheet_name='البيانات المنظفة', index=False)
-                
-                # Sheets 2+: كل منطقة في sheet منفصل
-                # نتأكد إن المنطقة موجودة
-                if 'المنطقة' in edited_df.columns:
-                    for area_name in edited_df['المنطقة'].unique():
-                        if pd.notna(area_name):
-                            area_df = edited_df[edited_df['المنطقة'] == area_name].copy()
-                            # نشيل عمود المنطقة من الشيت المنطقة
-                            area_df = area_df.drop(columns=['المنطقة'])
-                            area_df.to_excel(writer, sheet_name=str(area_name)[:31], index=False)
+            buffer_pdf = BytesIO()
+            doc = SimpleDocTemplate(
+                buffer_pdf,
+                pagesize=landscape(A4),
+                leftMargin=15, rightMargin=15, topMargin=15, bottomMargin=15
+            )
+            elements = []
             
-            buffer_final.seek(0)
+            # تقسيم البيانات حسب المنطقة
+            if 'المنطقة' in edited_df.columns:
+                for area_name in edited_df['المنطقة'].unique():
+                    if pd.notna(area_name):
+                        area_df = edited_df[edited_df['المنطقة'] == area_name].copy()
+                        # نشيل عمود المنطقة من الجدول
+                        area_df = area_df.drop(columns=['المنطقة'])
+                        elements.extend(df_to_pdf_table(area_df.copy(), title=str(area_name)))
             
-            file_name_final = f"سواقين فلاش - {today}.xlsx"
+            doc.build(elements)
+            buffer_pdf.seek(0)
             
-            st.success("✅ تم تقسيم البيانات للمناطق بنجاح!")
+            file_name_pdf = f"سواقين فلاش - {today}.pdf"
+            
+            st.success("✅ تم تقسيم البيانات للمناطق وإنشاء PDF بنجاح!")
             st.download_button(
-                label="⬇️⬇️ تحميل الملف النهائي (البيانات + المناطق)",
-                data=buffer_final.getvalue(),
-                file_name=file_name_final,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="download_final"
+                label="⬇️⬇️ تحميل ملف PDF النهائي (المناطق)",
+                data=buffer_pdf.getvalue(),
+                file_name=file_name_pdf,
+                mime="application/pdf",
+                key="download_pdf"
             )
             
             st.subheader("📊 Preview البيانات المعدّلة")
