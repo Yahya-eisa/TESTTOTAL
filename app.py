@@ -74,6 +74,22 @@ def classify_city(city):
 
 # ---------- PDF table builder ----------
 def df_to_pdf_table(df, title="FLASH"):
+    # تنسيق رقم الموبايل فقط (مش كود الاوردر)
+    if 'رقم موبايل العميل' in df.columns:
+        df['رقم موبايل العميل'] = df['رقم موبايل العميل'].apply(
+            lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit()
+            else ("" if pd.isna(x) else str(x))
+        )
+    
+    # تحويل الأرقام للأعمدة العددية فقط (مش النصوص)
+    numeric_cols = {'عدد القطع', 'الكمية'}
+    for col in df.columns:
+        if col in numeric_cols:
+            df[col] = df[col].apply(
+                lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit()
+                else ("" if pd.isna(x) else str(x))
+            )
+
     styleN = ParagraphStyle(name='Normal', fontName='Arabic-Bold', fontSize=9,
                             alignment=1, wordWrap='RTL')
     styleBH = ParagraphStyle(name='Header', fontName='Arabic-Bold', fontSize=10,
@@ -130,7 +146,8 @@ if uploaded_files:
 
     all_frames = []
     for file in uploaded_files:
-        xls = pd.read_excel(file, sheet_name=None, engine="openpyxl")
+        # قراءة الملف مع الحفاظ على كود الأوردر كنص
+        xls = pd.read_excel(file, sheet_name=None, engine="openpyxl", dtype={'رقم الاوردر': str})
         for _, df in xls.items():
             df = df.dropna(how="all")
             all_frames.append(df)
@@ -156,6 +173,10 @@ if uploaded_files:
         
         # إعادة تسمية الأعمدة
         merged_df = merged_df.rename(columns=column_mapping)
+        
+        # التأكد من أن كود الأوردر نص
+        if 'كود الاوردر' in merged_df.columns:
+            merged_df['كود الاوردر'] = merged_df['كود الاوردر'].astype(str)
         
         # اختيار الأعمدة المطلوبة فقط
         required_cols = ['كود الاوردر', 'اسم العميل', 'العنوان', 'المدينة', 
@@ -200,13 +221,6 @@ if uploaded_files:
         
         merged_df = merged_df[[c for c in final_order if c in merged_df.columns]].copy()
         
-        # تنسيق رقم الموبايل
-        if 'رقم موبايل العميل' in merged_df.columns:
-            merged_df['رقم موبايل العميل'] = merged_df['رقم موبايل العميل'].apply(
-                lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit()
-                else ("" if pd.isna(x) else str(x))
-            )
-        
         # ترتيب حسب المنطقة
         merged_df['المنطقة'] = pd.Categorical(
             merged_df['المنطقة'],
@@ -224,7 +238,7 @@ if uploaded_files:
         )
         elements = []
         for group_name, group_df in merged_df.groupby('المنطقة'):
-            elements.extend(df_to_pdf_table(group_df, title=str(group_name)))
+            elements.extend(df_to_pdf_table(group_df.copy(), title=str(group_name)))
         doc.build(elements)
         buffer.seek(0)
         
