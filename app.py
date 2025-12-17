@@ -284,6 +284,10 @@ if uploaded_files:
                         # نشيل عمود المنطقة من الجدول
                         area_df = area_df.drop(columns=['المنطقة'])
                         elements.extend(df_to_pdf_table(area_df.copy(), title=str(area_name)))
+
+            # توزيع عرض الأعمدة
+            col_widths_cm = [2, 2.5, 2, 3, 2, 2.5, 1.5, 1.5, 2.5, 3, 1.5, 1.5, 1, 1.5]
+            col_widths = [max(c * 28.35, 15) for c in col_widths_cm]
             
             doc.build(elements)
             buffer_pdf.seek(0)
@@ -299,4 +303,5 @@ if uploaded_files:
                 mime="application/pdf",
                 key="download_pdf"
             )
+
 
