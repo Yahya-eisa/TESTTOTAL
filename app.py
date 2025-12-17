@@ -104,7 +104,7 @@ def df_to_pdf_table(df, title="FLASH"):
         data.append([Paragraph(fix_arabic("" if pd.isna(row[col]) else str(row[col])), styleN)
                      for col in df.columns])
 
-    # توزيع عرض الأعمدة
+    # ✅ الأبعاد الأصلية من الكود الأساسي
     col_widths_cm = [2, 2.5, 2, 3, 2, 2.5, 1.5, 1.5, 2.5, 3, 1.5, 1.5, 1, 1.5]
     col_widths = [max(c * 28.35, 15) for c in col_widths_cm]
 
@@ -245,8 +245,6 @@ if uploaded_files:
             key="download_clean"
         )
         
-        st.dataframe(merged_df.head(20), use_container_width=True)
-        
         # ============ الجزء الثاني: رفع الملف المعدّل وتقسيم المناطق ============
         st.divider()
         st.subheader("🔄 الجزء الثاني: رفع الملف المعدّل وتقسيم المناطق")
@@ -289,7 +287,8 @@ if uploaded_files:
             
             file_name_pdf = f"سواقين فلاش - {today}.pdf"
             
-            st.success("✅ تم تقسيم البيانات للمناطق وإنشاء PDF بنجاح!")
+            # ✅ شيلنا الـ preview والـ success message
+            # مباشرة زر التحميل بس
             st.download_button(
                 label="⬇️⬇️ تحميل ملف PDF النهائي (المناطق)",
                 data=buffer_pdf.getvalue(),
@@ -297,6 +296,3 @@ if uploaded_files:
                 mime="application/pdf",
                 key="download_pdf"
             )
-            
-            st.subheader("📊 Preview البيانات المعدّلة")
-            st.dataframe(edited_df.head(20), use_container_width=True)
