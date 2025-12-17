@@ -104,7 +104,7 @@ def df_to_pdf_table(df, title="FLASH"):
         data.append([Paragraph(fix_arabic("" if pd.isna(row[col]) else str(row[col])), styleN)
                      for col in df.columns])
 
-    # ✅ الأبعاد الأصلية من الكود الأساسي
+    # توزيع عرض الأعمدة
     col_widths_cm = [2, 2.5, 2, 3, 2, 2.5, 1.5, 1.5, 2.5, 3, 1.5, 1.5, 1, 1.5]
     col_widths = [max(c * 28.35, 15) for c in col_widths_cm]
 
@@ -217,6 +217,9 @@ if uploaded_files:
                         'حالة الاوردر', 'عدد القطع', 'الملاحظات', 'الإجمالي مع الشحن']
         
         merged_df['is_first'] = ~merged_df.duplicated(subset=['كود الاوردر'], keep='first')
+        # توزيع عرض الأعمدة
+        col_widths_cm = [2, 2.5, 2, 3, 2, 2.5, 1.5, 1.5, 2.5, 3, 1.5, 1.5, 1, 1.5]
+        col_widths = [max(c * 28.35, 15) for c in col_widths_cm]
         
         for col in cols_to_clear:
             if col in merged_df.columns:
@@ -296,3 +299,4 @@ if uploaded_files:
                 mime="application/pdf",
                 key="download_pdf"
             )
+
