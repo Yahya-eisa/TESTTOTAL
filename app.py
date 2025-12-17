@@ -192,6 +192,10 @@ if uploaded_files:
         if 'اسم العميل' in merged_df.columns:
             merged_df['اسم العميل'] = fill_down(merged_df['اسم العميل'])
         
+        # Fill down للملاحظات أيضاً (عشان تظهر في أول سطر)
+        if 'الملاحظات' in merged_df.columns:
+            merged_df['الملاحظات'] = fill_down(merged_df['الملاحظات'])
+        
         # معالجة المدينة للصفوف اللي فيها منتج
         if 'المدينة' in merged_df.columns and 'اسم الصنف' in merged_df.columns:
             prod_present = merged_df['اسم الصنف'].notna() & merged_df['اسم الصنف'].astype(str).str.strip().ne('')
@@ -233,7 +237,7 @@ if uploaded_files:
         # نحدد أول ظهور لكل كود
         merged_df['is_first'] = ~merged_df.duplicated(subset=['كود الاوردر'], keep='first')
         
-        # نمسح البيانات للصفوف المكررة
+        # نمسح البيانات للصفوف المكررة فقط
         for col in cols_to_clear:
             if col in merged_df.columns:
                 merged_df.loc[~merged_df['is_first'], col] = ''
