@@ -16,9 +16,7 @@ import pytz
 def fix_arabic(text):
     if pd.isna(text):
         return ""
-    # استبدال الـ newlines بـ <br/> عشان السطور تظهر صح
-    text = str(text).replace('\n', '<br/>')
-    reshaped = arabic_reshaper.reshape(text)
+    reshaped = arabic_reshaper.reshape(str(text))
     return get_display(reshaped)
 
 def fill_down(series):
@@ -92,13 +90,12 @@ def df_to_pdf_table(df, title="FLASH"):
                 else ("" if pd.isna(x) else str(x))
             )
 
-    # تعديل الـ styles عشان السطور تكون من فوق لتحت
     styleN = ParagraphStyle(name='Normal', fontName='Arabic-Bold', fontSize=9,
-                            alignment=1, leading=12, wordWrap='CJK')
+                            alignment=1, wordWrap='RTL')
     styleBH = ParagraphStyle(name='Header', fontName='Arabic-Bold', fontSize=10,
-                             alignment=1, leading=14, wordWrap='CJK')
+                             alignment=1, wordWrap='RTL')
     styleTitle = ParagraphStyle(name='Title', fontName='Arabic-Bold', fontSize=14,
-                                alignment=1, leading=18, wordWrap='CJK')
+                                alignment=1, wordWrap='RTL')
 
     data = []
     data.append([Paragraph(fix_arabic(col), styleBH) for col in df.columns])
@@ -158,17 +155,6 @@ if uploaded_files:
     if all_frames:
         merged_df = pd.concat(all_frames, ignore_index=True, sort=False)
         
-        # طباعة أسماء الأعمدة للتأكد
-        st.write("الأعمدة الموجودة في الشيت:")
-        st.write(list(merged_df.columns))
-        
-        # البحث عن عمود الملاحظات (AJ)
-        notes_col = None
-        for col in merged_df.columns:
-            if 'ملاحظة' in str(col) and 'اوردر' in str(col):
-                notes_col = col
-                break
-        
         # اختيار الأعمدة المطلوبة حسب الترتيب الصحيح
         column_mapping = {
             ' الرقم العشوائي': 'كود الاوردر',
@@ -177,6 +163,7 @@ if uploaded_files:
             'المدينة': 'المدينة',
             'موبايل(1)': 'رقم موبايل العميل',
             'حالة الاوردر': 'حالة الاوردر',
+            'اخر ملاحظة على الاوردر': 'الملاحظات',
             'اسم المنتج': 'اسم الصنف',
             'اللون': 'اللون',
             'المقاس': 'المقاس',
@@ -184,21 +171,13 @@ if uploaded_files:
             'Total': 'الإجمالي مع الشحن'
         }
         
-        # إضافة عمود الملاحظات للـ mapping
-        if notes_col:
-            column_mapping[notes_col] = 'الملاحظات'
-        
         # إعادة تسمية الأعمدة
         merged_df = merged_df.rename(columns=column_mapping)
         
         # اختيار الأعمدة المطلوبة فقط
         required_cols = ['كود الاوردر', 'اسم العميل', 'العنوان', 'المدينة', 
-                        'رقم موبايل العميل', 'حالة الاوردر', 
+                        'رقم موبايل العميل', 'حالة الاوردر', 'الملاحظات', 
                         'اسم الصنف', 'اللون', 'المقاس', 'الكمية', 'الإجمالي مع الشحن']
-        
-        # إضافة الملاحظات إذا كانت موجودة
-        if 'الملاحظات' in merged_df.columns:
-            required_cols.insert(6, 'الملاحظات')  # نضيفها بعد حالة الاوردر
         
         merged_df = merged_df[[c for c in required_cols if c in merged_df.columns]].copy()
         
@@ -231,7 +210,7 @@ if uploaded_files:
         # تصنيف المنطقة من المدينة
         merged_df['المنطقة'] = merged_df['المدينة'].apply(classify_city)
         
-        # إعادة ترتيب الأعمدة النهائي بحيث الملاحظات تكون رقم 9
+        # إعادة ترتيب الأعمدة النهائي
         final_order = ['كود الاوردر', 'اسم العميل', 'المنطقة', 'العنوان', 'المدينة',
                       'رقم موبايل العميل', 'حالة الاوردر', 'عدد القطع', 'الملاحظات',
                       'اسم الصنف', 'اللون', 'المقاس', 'الكمية', 'الإجمالي مع الشحن']
@@ -246,7 +225,8 @@ if uploaded_files:
         )
         merged_df = merged_df.sort_values(['المنطقة','كود الاوردر'])
         
-        # التعديل: مسح التفاصيل المكررة وترك المنتجات والملاحظات
+        # التعديل الجديد: مسح التفاصيل المكررة وترك المنتجات والملاحظات
+        # الأعمدة اللي هنمسحها للصفوف المكررة (بدون الملاحظات!)
         cols_to_clear = ['اسم العميل', 'العنوان', 'المدينة', 'رقم موبايل العميل', 
                         'حالة الاوردر', 'عدد القطع', 'الإجمالي مع الشحن']
         
