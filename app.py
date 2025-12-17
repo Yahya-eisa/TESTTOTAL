@@ -104,8 +104,17 @@ def df_to_pdf_table(df, title="FLASH"):
         data.append([Paragraph(fix_arabic("" if pd.isna(row[col]) else str(row[col])), styleN)
                      for col in df.columns])
 
-    # توزيع عرض الأعمدة
-    col_widths_cm = [2, 2.5, 2, 3, 2, 2.5, 1.5, 1.5, 2.5, 3, 1.5, 1.5, 1, 1.5]
+    # ✅ توزيع عرض الأعمدة - متكيف مع عدد الأعمدة الفعلي
+    base_col_widths_cm = [2, 2.5, 2, 3, 2, 2.5, 1.5, 1.5, 2.5, 3, 1.5, 1.5, 1, 1.5, 1.5]
+    n_cols = len(df.columns)
+
+    if n_cols <= len(base_col_widths_cm):
+        col_widths_cm = base_col_widths_cm[:n_cols]
+    else:
+        # لو عندنا أعمدة زيادة نكرر آخر مقاس
+        extra = n_cols - len(base_col_widths_cm)
+        col_widths_cm = base_col_widths_cm + [base_col_widths_cm[-1]] * extra
+
     col_widths = [max(c * 28.35, 15) for c in col_widths_cm]
 
     tz = pytz.timezone('Africa/Cairo')
@@ -117,7 +126,7 @@ def df_to_pdf_table(df, title="FLASH"):
         Spacer(1, 14)
     ]
 
-    table = Table(data, colWidths=col_widths[:len(df.columns)], repeatRows=1)
+    table = Table(data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#64B5F6")),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
@@ -217,9 +226,6 @@ if uploaded_files:
                         'حالة الاوردر', 'عدد القطع', 'الملاحظات', 'الإجمالي مع الشحن']
         
         merged_df['is_first'] = ~merged_df.duplicated(subset=['كود الاوردر'], keep='first')
-        # توزيع عرض الأعمدة
-        col_widths_cm = [2, 2.5, 2, 3, 2, 2.5, 1.5, 1.5, 2.5, 3, 1.5, 1.5, 1, 1.5]
-        col_widths = [max(c * 28.35, 15) for c in col_widths_cm]
         
         for col in cols_to_clear:
             if col in merged_df.columns:
@@ -264,7 +270,7 @@ if uploaded_files:
             
             st.success("✅ تم قراءة الملف المعدّل بنجاح!")
             
-            # ✅ إنشاء PDF بـ كل منطقة بـ جداول
+            # ✅ إنشاء PDF بـ كل منطقة بـ جداول + عمود المنطقة
             pdfmetrics.registerFont(TTFont('Arabic', 'Amiri-Regular.ttf'))
             pdfmetrics.registerFont(TTFont('Arabic-Bold', 'Amiri-Bold.ttf'))
             
@@ -281,21 +287,15 @@ if uploaded_files:
                 for area_name in edited_df['المنطقة'].unique():
                     if pd.notna(area_name):
                         area_df = edited_df[edited_df['المنطقة'] == area_name].copy()
-                        # نشيل عمود المنطقة من الجدول
-                        area_df = area_df.drop(columns=['المنطقة'])
+                        # ✅ احتفظ بعمود المنطقة (ما نمسحش)
                         elements.extend(df_to_pdf_table(area_df.copy(), title=str(area_name)))
-
-            # توزيع عرض الأعمدة
-            col_widths_cm = [2, 2.5, 2, 3, 2, 2.5, 1.5, 1.5, 2.5, 3, 1.5, 1.5, 1, 1.5]
-            col_widths = [max(c * 28.35, 15) for c in col_widths_cm]
             
             doc.build(elements)
             buffer_pdf.seek(0)
             
             file_name_pdf = f"سواقين فلاش - {today}.pdf"
             
-            # ✅ شيلنا الـ preview والـ success message
-            # مباشرة زر التحميل بس
+            # ✅ مباشرة زر التحميل بس
             st.download_button(
                 label="⬇️⬇️ تحميل ملف PDF النهائي (المناطق)",
                 data=buffer_pdf.getvalue(),
@@ -303,5 +303,3 @@ if uploaded_files:
                 mime="application/pdf",
                 key="download_pdf"
             )
-
-
