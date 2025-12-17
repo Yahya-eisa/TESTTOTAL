@@ -10,7 +10,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
-import pytz  # لإعداد التوقيت المحلي
+import pytz
 
 # ---------- Arabic helpers ----------
 def fix_arabic(text):
@@ -74,33 +74,6 @@ def classify_city(city):
 
 # ---------- PDF table builder ----------
 def df_to_pdf_table(df, title="FLASH"):
-    if "اجمالي عدد القطع في الطلب" in df.columns:
-        df = df.rename(columns={"اجمالي عدد القطع في الطلب": "عدد القطع"})
-
-    final_cols = [
-        'كود الاوردر', 'اسم العميل', 'المنطقة', 'العنوان',
-        'المدينة', 'رقم موبايل العميل', 'حالة الاوردر',
-        'عدد القطع', 'الملاحظات', 'اسم الصنف',
-        'اللون', 'المقاس', 'الكمية',
-        'الإجمالي مع الشحن'
-    ]
-    df = df[[c for c in final_cols if c in df.columns]].copy()
-
-    if 'رقم موبايل العميل' in df.columns:
-        df['رقم موبايل العميل'] = df['رقم موبايل العميل'].apply(
-            lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit()
-            else ("" if pd.isna(x) else str(x))
-        )
-
-    safe_cols = {'الإجمالي مع الشحن','كود الاوردر','رقم موبايل العميل','اسم العميل',
-                 'المنطقة','العنوان','المدينة','حالة الاوردر','الملاحظات','اسم الصنف','اللون','المقاس'}
-    for col in df.columns:
-        if col not in safe_cols:
-            df[col] = df[col].apply(
-                lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit()
-                else ("" if pd.isna(x) else str(x))
-            )
-
     styleN = ParagraphStyle(name='Normal', fontName='Arabic-Bold', fontSize=9,
                             alignment=1, wordWrap='RTL')
     styleBH = ParagraphStyle(name='Header', fontName='Arabic-Bold', fontSize=10,
@@ -114,8 +87,8 @@ def df_to_pdf_table(df, title="FLASH"):
         data.append([Paragraph(fix_arabic("" if pd.isna(row[col]) else str(row[col])), styleN)
                      for col in df.columns])
 
-    # توزيع عرض الأعمدة (مجموع < عرض A4 Landscape ≈ 842pt)
-    col_widths_cm = [2, 2, 1.5, 3, 2, 3, 1.5, 1.5, 2.5, 3.5, 1.5, 1.5, 1, 1.5]
+    # توزيع عرض الأعمدة
+    col_widths_cm = [2, 2.5, 2, 3, 2, 2.5, 1.5, 1.5, 2.5, 3, 1.5, 1.5, 1, 1.5]
     col_widths = [max(c * 28.35, 15) for c in col_widths_cm]
 
     tz = pytz.timezone('Africa/Cairo')
@@ -164,15 +137,45 @@ if uploaded_files:
 
     if all_frames:
         merged_df = pd.concat(all_frames, ignore_index=True, sort=False)
+        
+        # اختيار الأعمدة المطلوبة فقط حسب الترتيب
+        column_mapping = {
+            'رقم الاوردر': 'كود الاوردر',
+            'الإسم': 'اسم العميل',
+            'العنوان': 'العنوان',
+            'المدينة': 'المدينة',
+            'موبايل(1)': 'رقم موبايل العميل',
+            'حالة الاوردر': 'حالة الاوردر',
+            'اخر ملاحظة على الاوردر': 'الملاحظات',
+            'اسم المنتج': 'اسم الصنف',
+            'اللون': 'اللون',
+            'المقاس': 'المقاس',
+            'الكمية': 'الكمية',
+            'Total': 'الإجمالي مع الشحن'
+        }
+        
+        # إعادة تسمية الأعمدة
+        merged_df = merged_df.rename(columns=column_mapping)
+        
+        # اختيار الأعمدة المطلوبة فقط
+        required_cols = ['كود الاوردر', 'اسم العميل', 'العنوان', 'المدينة', 
+                        'رقم موبايل العميل', 'حالة الاوردر', 'الملاحظات', 
+                        'اسم الصنف', 'اللون', 'المقاس', 'الكمية', 'الإجمالي مع الشحن']
+        
+        merged_df = merged_df[[c for c in required_cols if c in merged_df.columns]].copy()
+        
+        # استبدال معلق بتم التأكيد
         merged_df = replace_muaaqal_with_confirm_safe(merged_df)
-
+        
+        # Fill down للأعمدة الأساسية
         if 'المدينة' in merged_df.columns:
             merged_df['المدينة'] = merged_df['المدينة'].ffill().fillna('')
         if 'كود الاوردر' in merged_df.columns:
             merged_df['كود الاوردر'] = fill_down(merged_df['كود الاوردر'])
         if 'اسم العميل' in merged_df.columns:
             merged_df['اسم العميل'] = fill_down(merged_df['اسم العميل'])
-
+        
+        # معالجة المدينة للصفوف اللي فيها منتج
         if 'المدينة' in merged_df.columns and 'اسم الصنف' in merged_df.columns:
             prod_present = merged_df['اسم الصنف'].notna() & merged_df['اسم الصنف'].astype(str).str.strip().ne('')
             city_empty = merged_df['المدينة'].isna() | merged_df['المدينة'].astype(str).str.strip().eq('')
@@ -180,16 +183,39 @@ if uploaded_files:
             if mask.any():
                 city_ffill = merged_df['المدينة'].ffill()
                 merged_df.loc[mask, 'المدينة'] = city_ffill.loc[mask]
-
+        
+        # حساب عدد القطع (مجموع الكمية لكل أوردر)
+        if 'كود الاوردر' in merged_df.columns and 'الكمية' in merged_df.columns:
+            merged_df['الكمية'] = pd.to_numeric(merged_df['الكمية'], errors='coerce').fillna(0)
+            order_total_qty = merged_df.groupby('كود الاوردر')['الكمية'].transform('sum')
+            merged_df.insert(7, 'عدد القطع', order_total_qty)
+        
+        # تصنيف المنطقة من المدينة
         merged_df['المنطقة'] = merged_df['المدينة'].apply(classify_city)
+        
+        # إعادة ترتيب الأعمدة النهائي
+        final_order = ['كود الاوردر', 'اسم العميل', 'المنطقة', 'العنوان', 'المدينة',
+                      'رقم موبايل العميل', 'حالة الاوردر', 'عدد القطع', 'الملاحظات',
+                      'اسم الصنف', 'اللون', 'المقاس', 'الكمية', 'الإجمالي مع الشحن']
+        
+        merged_df = merged_df[[c for c in final_order if c in merged_df.columns]].copy()
+        
+        # تنسيق رقم الموبايل
+        if 'رقم موبايل العميل' in merged_df.columns:
+            merged_df['رقم موبايل العميل'] = merged_df['رقم موبايل العميل'].apply(
+                lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit()
+                else ("" if pd.isna(x) else str(x))
+            )
+        
+        # ترتيب حسب المنطقة
         merged_df['المنطقة'] = pd.Categorical(
             merged_df['المنطقة'],
             categories=[c for c in merged_df['المنطقة'].unique() if c != "Other City"] + ["Other City"],
             ordered=True
         )
-
         merged_df = merged_df.sort_values(['المنطقة','كود الاوردر'])
-
+        
+        # إنشاء PDF
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
             buffer,
@@ -201,11 +227,11 @@ if uploaded_files:
             elements.extend(df_to_pdf_table(group_df, title=str(group_name)))
         doc.build(elements)
         buffer.seek(0)
-
+        
         tz = pytz.timezone('Africa/Cairo')
         today = datetime.datetime.now(tz).strftime("%Y-%m-%d")
         file_name = f"سواقين فلاش - {today}.pdf"
-
+        
         st.success("✅تم تجهيز ملف PDF ✅")
         st.download_button(
             label="⬇️⬇️ تحميل ملف PDF",
@@ -213,11 +239,3 @@ if uploaded_files:
             file_name=file_name,
             mime="application/pdf"
         )
-
-
-
-
-
-
-
-
