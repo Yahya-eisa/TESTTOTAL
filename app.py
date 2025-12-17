@@ -16,9 +16,7 @@ import pytz
 def fix_arabic(text):
     if pd.isna(text):
         return ""
-    # استبدال الـ newlines بـ <br/> عشان السطور تظهر صح من فوق لتحت
-    text = str(text).replace('\n', '<br/>').replace('\r', '')
-    reshaped = arabic_reshaper.reshape(text)
+    reshaped = arabic_reshaper.reshape(str(text))
     return get_display(reshaped)
 
 def fill_down(series):
@@ -92,13 +90,12 @@ def df_to_pdf_table(df, title="FLASH"):
                 else ("" if pd.isna(x) else str(x))
             )
 
-    # تعديل ParagraphStyle عشان السطور تكون من فوق لتحت
     styleN = ParagraphStyle(name='Normal', fontName='Arabic-Bold', fontSize=9,
-                            alignment=1, leading=14, wordWrap='CJK')
+                            alignment=1, wordWrap='RTL')
     styleBH = ParagraphStyle(name='Header', fontName='Arabic-Bold', fontSize=10,
-                             alignment=1, leading=14, wordWrap='CJK')
+                             alignment=1, wordWrap='RTL')
     styleTitle = ParagraphStyle(name='Title', fontName='Arabic-Bold', fontSize=14,
-                                alignment=1, leading=18, wordWrap='CJK')
+                                alignment=1, wordWrap='RTL')
 
     data = []
     data.append([Paragraph(fix_arabic(col), styleBH) for col in df.columns])
@@ -124,7 +121,7 @@ def df_to_pdf_table(df, title="FLASH"):
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#64B5F6")),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
         ('GRID', (0, 0), (-1, -1), 0.25, colors.black),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
     ]))
 
@@ -158,7 +155,7 @@ if uploaded_files:
     if all_frames:
         merged_df = pd.concat(all_frames, ignore_index=True, sort=False)
         
-        # تبديل اسم العمود من AJ
+        # اختيار الأعمدة المطلوبة حسب الترتيب الصحيح
         column_mapping = {
             ' الرقم العشوائي': 'كود الاوردر',
             'الإسم': 'اسم العميل',
@@ -166,7 +163,7 @@ if uploaded_files:
             'المدينة': 'المدينة',
             'موبايل(1)': 'رقم موبايل العميل',
             'حالة الاوردر': 'حالة الاوردر',
-            'ملاحظة الافيليت على الطلب': 'الملاحظات',  # ✅ AJ الأصلي
+            'اخر ملاحظة على الاوردر': 'الملاحظات',
             'اسم المنتج': 'اسم الصنف',
             'اللون': 'اللون',
             'المقاس': 'المقاس',
@@ -177,7 +174,7 @@ if uploaded_files:
         # إعادة تسمية الأعمدة
         merged_df = merged_df.rename(columns=column_mapping)
         
-        # اختيار الأعمدة المطلوبة فقط بالترتيب الصحيح
+        # اختيار الأعمدة المطلوبة فقط
         required_cols = ['كود الاوردر', 'اسم العميل', 'العنوان', 'المدينة', 
                         'رقم موبايل العميل', 'حالة الاوردر', 'الملاحظات', 
                         'اسم الصنف', 'اللون', 'المقاس', 'الكمية', 'الإجمالي مع الشحن']
@@ -187,16 +184,13 @@ if uploaded_files:
         # استبدال معلق بتم التأكيد
         merged_df = replace_muaaqal_with_confirm_safe(merged_df)
         
-        # Fill down للأعمدة الأساسية + الملاحظات
+        # Fill down للأعمدة الأساسية
         if 'المدينة' in merged_df.columns:
             merged_df['المدينة'] = merged_df['المدينة'].ffill().fillna('')
         if 'كود الاوردر' in merged_df.columns:
             merged_df['كود الاوردر'] = fill_down(merged_df['كود الاوردر'])
         if 'اسم العميل' in merged_df.columns:
             merged_df['اسم العميل'] = fill_down(merged_df['اسم العميل'])
-        # ✅ هنا! Fill down للملاحظات
-        if 'الملاحظات' in merged_df.columns:
-            merged_df['الملاحظات'] = fill_down(merged_df['الملاحظات'])
         
         # معالجة المدينة للصفوف اللي فيها منتج
         if 'المدينة' in merged_df.columns and 'اسم الصنف' in merged_df.columns:
@@ -216,21 +210,10 @@ if uploaded_files:
         # تصنيف المنطقة من المدينة
         merged_df['المنطقة'] = merged_df['المدينة'].apply(classify_city)
         
-        # إعادة ترتيب الأعمدة النهائي - الملاحظات في المكان 9!
-        final_order = ['كود الاوردر',           # 1
-                      'اسم العميل',            # 2
-                      'المنطقة',               # 3
-                      'العنوان',               # 4
-                      'المدينة',               # 5
-                      'رقم موبايل العميل',    # 6
-                      'حالة الاوردر',          # 7
-                      'عدد القطع',             # 8
-                      'الملاحظات',             # 9 ✅ هنا!
-                      'اسم الصنف',             # 10
-                      'اللون',                 # 11
-                      'المقاس',                # 12
-                      'الكمية',                # 13
-                      'الإجمالي مع الشحن']    # 14
+        # إعادة ترتيب الأعمدة النهائي
+        final_order = ['كود الاوردر', 'اسم العميل', 'المنطقة', 'العنوان', 'المدينة',
+                      'رقم موبايل العميل', 'حالة الاوردر', 'عدد القطع', 'الملاحظات',
+                      'اسم الصنف', 'اللون', 'المقاس', 'الكمية', 'الإجمالي مع الشحن']
         
         merged_df = merged_df[[c for c in final_order if c in merged_df.columns]].copy()
         
@@ -242,14 +225,15 @@ if uploaded_files:
         )
         merged_df = merged_df.sort_values(['المنطقة','كود الاوردر'])
         
-        # مسح التفاصيل المكررة (بدون الملاحظات!)
+        # التعديل الجديد: مسح التفاصيل المكررة وترك المنتجات والملاحظات
+        # الأعمدة اللي هنمسحها للصفوف المكررة (بدون الملاحظات!)
         cols_to_clear = ['اسم العميل', 'العنوان', 'المدينة', 'رقم موبايل العميل', 
                         'حالة الاوردر', 'عدد القطع', 'الإجمالي مع الشحن']
         
         # نحدد أول ظهور لكل كود
         merged_df['is_first'] = ~merged_df.duplicated(subset=['كود الاوردر'], keep='first')
         
-        # ✅ نمسح البيانات للصفوف المكررة (الملاحظات مش في القائمة دي!)
+        # نمسح البيانات للصفوف المكررة فقط (بدون الملاحظات)
         for col in cols_to_clear:
             if col in merged_df.columns:
                 merged_df.loc[~merged_df['is_first'], col] = ''
