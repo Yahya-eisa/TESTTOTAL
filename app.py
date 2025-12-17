@@ -146,8 +146,8 @@ if uploaded_files:
 
     all_frames = []
     for file in uploaded_files:
-        # قراءة الملف مع الحفاظ على كود الأوردر كنص
-        xls = pd.read_excel(file, sheet_name=None, engine="openpyxl", dtype={'رقم الاوردر': str})
+        # قراءة كل الأعمدة كنص أولاً
+        xls = pd.read_excel(file, sheet_name=None, engine="openpyxl", dtype=str)
         for _, df in xls.items():
             df = df.dropna(how="all")
             all_frames.append(df)
@@ -173,10 +173,6 @@ if uploaded_files:
         
         # إعادة تسمية الأعمدة
         merged_df = merged_df.rename(columns=column_mapping)
-        
-        # التأكد من أن كود الأوردر نص
-        if 'كود الاوردر' in merged_df.columns:
-            merged_df['كود الاوردر'] = merged_df['كود الاوردر'].astype(str)
         
         # اختيار الأعمدة المطلوبة فقط
         required_cols = ['كود الاوردر', 'اسم العميل', 'العنوان', 'المدينة', 
